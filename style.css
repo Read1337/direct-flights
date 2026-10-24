@@ -101,12 +101,12 @@ th.dest .meta { display: block; color: var(--ink-3); font-size: 11px; white-spac
 .badge { font-size: 10px; font-weight: 600; color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: 1px; }
 
 td { padding: 0; }
-td a, td span.none, td span.wait {
+td a:not(.chip), td span.none, td span.wait {
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   width: 72px; height: 44px; border-radius: 4px; text-decoration: none;
 }
-td a { cursor: pointer; }
-td a:hover, td a:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+td a:not(.chip) { cursor: pointer; }
+td a:not(.chip):hover, td a:not(.chip):focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 td a b { font-size: 14px; font-weight: 600; }
 td a small { font-size: 10px; opacity: .85; }
 td span.none { background: var(--empty); color: var(--ink-3); }
@@ -123,6 +123,17 @@ td span.wait { background: var(--empty); color: var(--ink-3); opacity: .5; }
 .list td.when .shift { color: var(--accent); font-weight: 600; }
 .list td.nope { color: var(--ink-3); font-size: 12px; padding: 4px 12px; }
 .list thead th { text-align: left; padding-left: 12px; }
+.also { display: block; font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.also-link { color: var(--accent); text-decoration: none; }
+.also-link:hover { text-decoration: underline; }
+.other { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; min-height: 44px; border-radius: 4px; background: var(--empty); }
+.muted { color: var(--ink-3); font-size: 12px; }
+td a.chip {
+  display: inline-flex; flex-direction: row; width: auto; height: auto; padding: 3px 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink);
+  font-size: 12px; font-weight: 500; text-decoration: none;
+}
+td a.chip:hover { border-color: var(--accent); color: var(--accent); outline: none; }
 .empty-state { padding: 40px; color: var(--ink-2); text-align: center; }
 
 .tip {
@@ -143,7 +154,7 @@ td span.wait { background: var(--empty); color: var(--ink-3); opacity: .5; }
   th.dest .city { font-size: 13px; }
   th.dest .meta { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; }
   .badge { display: none; }
-  td a, td span.none, td span.wait { width: 58px; height: 42px; }
+  td a:not(.chip), td span.none, td span.wait { width: 58px; height: 42px; }
   td a b { font-size: 13px; }
   .legend .sw { padding: 2px 5px; white-space: nowrap; }
   .controls { gap: 6px 12px; }

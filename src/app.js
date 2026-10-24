@@ -1,5 +1,6 @@
 import { getAirports, getRoutes, getMonth, pool, bookingUrl, BlockedError } from './api.js?v=__V__';
 import { DAY_NAMES, PRESETS, windows, bestTrip, bestTripOnDates, operatingDays, quantileBins, isoDate } from './trips.js?v=__V__';
+import { CARRIERS, otherRoutes, carrierUrl } from './carriers.js?v=__V__';
 
 const $ = (id) => document.getElementById(id);
 const SYMBOL = { GBP: '£', EUR: '€' };
@@ -206,18 +207,20 @@ function render() {
   const wins = windows(settings.spec, from, plusDays(from, settings.weeks * 7), nowLocal());
   const origin = settings.origin;
 
-  let rows = routes.map((r) => {
+  const linkDates = wins.length ? [wins[0].start.slice(0, 10), wins[0].end.slice(0, 10)] : [];
+  let rows = destinations().map(({ r, ryanair, others }) => {
+    if (!ryanair) return { r, others, cells: null, best: Infinity, loading: false, days: '' };
     const out = fares.get(`${origin}-${r.code}`) || [];
     const back = fares.get(`${r.code}-${origin}`) || [];
     const cells = wins.map((w) => bestTrip(out, back, w, settings.spec.minHours));
     const prices = cells.filter(Boolean).map((t) => t.total);
-    return { r, cells, best: prices.length ? Math.min(...prices) : Infinity, loading: pending.get(r.code) > 0, days: daysLabel(out, back) };
+    return { r, others, cells, best: prices.length ? Math.min(...prices) : Infinity, loading: pending.get(r.code) > 0, days: daysLabel(out, back) };
   });
 
-  if (settings.hideEmpty) rows = rows.filter((x) => x.loading || x.best < Infinity);
+  if (settings.hideEmpty) rows = rows.filter((x) => x.loading || x.best < Infinity || x.others.length);
   sortRows(rows);
 
-  const { binOf, edges, min, max } = quantileBins(rows.flatMap((x) => x.cells.filter(Boolean).map((t) => t.total)));
+  const { binOf, edges, min, max } = quantileBins(rows.flatMap((x) => (x.cells || []).filter(Boolean).map((t) => t.total)));
   renderLegend(edges, min, max);
 
   trips = [];
@@ -226,9 +229,10 @@ function render() {
     .join('')}</tr></thead>`;
 
   const body = rows
-    .map(({ r, cells, loading, days }) => {
+    .map(({ r, others, cells, loading, days }) => {
+      if (!cells) return `<tr>${destHeader(r, otherMeta(r, others))}<td colspan="${wins.length}">${otherCell(r, others, linkDates)}</td></tr>`;
       const meta = [r.country, days || (loading ? '' : 'no flights in range')].filter(Boolean).join(' · ');
-      const th = destHeader(r, meta);
+      const th = destHeader(r, meta, others, linkDates);
       const tds = cells
         .map((t, i) => {
           if (!t) return `<td>${loading ? '<span class="wait">…</span>' : '<span class="none" aria-label="No trip">–</span>'}</td>`;
@@ -245,11 +249,37 @@ function render() {
   grid.innerHTML = head + `<tbody>${body}</tbody>`;
 }
 
-const sortRows = (rows) =>
-  rows.sort(settings.sort === 'name' ? (a, b) => a.r.city.localeCompare(b.r.city) : (a, b) => a.best - b.best || a.r.city.localeCompare(b.r.city));
+// Ryanair routes (priced) merged with other airlines' routes (links only), one entry per airport.
+function destinations() {
+  const byCode = new Map(routes.map((r) => [r.code, { r, ryanair: true, others: [] }]));
+  for (const o of otherRoutes(settings.origin)) {
+    const hit = byCode.get(o.code);
+    if (hit) hit.others = o.carriers;
+    else byCode.set(o.code, { r: o, ryanair: false, others: o.carriers });
+  }
+  return [...byCode.values()];
+}
 
-const destHeader = (r, meta) =>
-  `<th scope="row" class="dest"><div class="dw"><span class="city">${flag(r.countryCode)} ${esc(r.city)}</span>${r.recent ? '<span class="badge">NEW</span>' : ''}<span class="meta" title="${esc(meta)}">${esc(meta)}</span></div></th>`;
+// Cheapest first; then destinations only other airlines fly; then routes with nothing in range.
+const rank = (x) => (x.best < Infinity ? 0 : x.others.length && (!x.cells || x.best === Infinity) ? 1 : 2);
+const sortRows = (rows) =>
+  rows.sort(settings.sort === 'name' ? (a, b) => a.r.city.localeCompare(b.r.city) : (a, b) => rank(a) - rank(b) || a.best - b.best || a.r.city.localeCompare(b.r.city));
+
+const monthLabel = (ym) => `${MONTHS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
+const carrierLink = (c, r, [out, back] = [], cls = 'chip') => {
+  const href = carrierUrl(c.id, settings.origin, r.code, out, back);
+  const note = c.starts ? ` · from ${monthLabel(c.starts)}` : '';
+  return `<a class="${cls}" href="${esc(href)}" target="_blank" rel="noopener" title="See ${esc(CARRIERS[c.id].name)} fares on their site">${esc(CARRIERS[c.id].name)}${note} ↗</a>`;
+};
+
+const otherMeta = (r, others) => [r.country, others.every((c) => c.seasonal) ? 'seasonal' : 'year-round'].join(' · ');
+const otherCell = (r, others, dates) =>
+  `<div class="other"><span class="muted">Fares on</span> ${others.map((c) => carrierLink(c, r, dates)).join(' ')}</div>`;
+
+const destHeader = (r, meta, others = [], dates) =>
+  `<th scope="row" class="dest"><div class="dw"><span class="city">${flag(r.countryCode)} ${esc(r.city)}</span>${r.recent ? '<span class="badge">NEW</span>' : ''}<span class="meta" title="${esc(meta)}">${esc(meta)}</span>${
+    others.length ? `<span class="also">also ${others.map((c) => carrierLink(c, r, dates, 'also-link')).join(' · ')}</span>` : ''
+  }</div></th>`;
 
 // Specific dates: one row per destination with the actual flights, cheapest first.
 function renderDates(grid) {
@@ -262,13 +292,14 @@ function renderDates(grid) {
     minNights: wantNights === 0 ? 0 : Math.max(1, wantNights - flex), // a day trip only if you asked for one
   };
 
-  let rows = routes.map((r) => {
+  let rows = destinations().map(({ r, ryanair, others }) => {
+    if (!ryanair) return { r, others, t: null, best: Infinity, loading: false, days: '' };
     const o = fares.get(`${origin}-${r.code}`) || [];
     const b = fares.get(`${r.code}-${origin}`) || [];
     const t = bestTripOnDates(o, b, span);
-    return { r, t, best: t ? t.total : Infinity, loading: pending.get(r.code) > 0, days: daysLabel(o, b) };
+    return { r, others, cells: true, t, best: t ? t.total : Infinity, loading: pending.get(r.code) > 0, days: daysLabel(o, b) };
   });
-  if (settings.hideEmpty) rows = rows.filter((x) => x.loading || x.t);
+  if (settings.hideEmpty) rows = rows.filter((x) => x.loading || x.t || x.others.length);
   sortRows(rows);
 
   const { binOf, edges, min, max } = quantileBins(rows.filter((x) => x.t).map((x) => x.t.total));
@@ -284,9 +315,10 @@ function renderDates(grid) {
   trips = [];
   const head = `<thead><tr><th scope="col">${rows.length} destination${rows.length === 1 ? '' : 's'}</th><th scope="col">Return</th><th scope="col">Out</th><th scope="col">Back</th></tr></thead>`;
   const body = rows
-    .map(({ r, t, loading, days }) => {
-      const th = destHeader(r, [r.country, days || (loading ? '' : 'no flights in range')].filter(Boolean).join(' · '));
-      if (!t) return `<tr>${th}<td colspan="3" class="nope">${loading ? '…' : 'No flights that fit these dates'}</td></tr>`;
+    .map(({ r, others, cells, t, loading, days }) => {
+      if (!cells) return `<tr>${destHeader(r, otherMeta(r, others))}<td colspan="3">${otherCell(r, others, [out, back])}</td></tr>`;
+      const th = destHeader(r, [r.country, days || (loading ? '' : 'no flights in range')].filter(Boolean).join(' · '), others, [out, back]);
+      if (!t) return `<tr>${th}<td colspan="3" class="nope">${loading ? '…' : 'No Ryanair flights that fit these dates'}</td></tr>`;
       const id = trips.push({ t, r }) - 1;
       const href = bookingUrl(origin, r.code, t.out.dep.slice(0, 10), t.back.dep.slice(0, 10));
       const price = `<td><a class="b${binOf(t.total)}" href="${esc(href)}" target="_blank" rel="noopener" data-i="${id}" aria-label="${esc(`${r.city}, ${money(t.total, 2)}`)}"><b>${money(t.total)}</b><small>${t.nights} night${t.nights === 1 ? '' : 's'}</small></a></td>`;
@@ -310,7 +342,8 @@ function renderStatus() {
   } else if (!routes.length) {
     el.textContent = `Loading routes from ${settings.origin}…`;
   } else {
-    el.textContent = `${routes.length} direct routes from ${settings.origin}`;
+    const extra = otherRoutes(settings.origin).filter((o) => !routes.some((r) => r.code === o.code)).length;
+    el.textContent = `${routes.length} Ryanair routes from ${settings.origin}${extra ? ` · ${extra} more destinations on Jet2, TUI & easyJet` : ''}`;
   }
 }
 

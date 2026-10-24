@@ -20,13 +20,14 @@ Push to `main`. The GitHub Actions workflow runs the tests, replaces `__V__` in 
 
 - `src/api.js` — Ryanair airports, routes, and `cheapestPerDay` fares (one route, one direction, one month per request), 4 requests at a time.
 - `src/trips.js` — pure logic: weekly trip windows ("leave Fri after 17:00, back Sun by 23:59") with a minimum time at the destination, and cheapest out+back on specific (optionally flexible) dates.
+- `src/carriers.js` — other airlines' routes from Bournemouth and links to their fare pages.
 - `src/app.js` — controls, grid, tooltip. Settings persist locally; `?from=XXX` picks the airport.
 
 Times are local at each airport, which is what the rules need: departures are checked against home time, the return's arrival against home time, and time-at-destination subtracts two destination-local times.
 
 ## Known limits
 
-- Ryanair only. Jet2/TUI/easyJet not yet (Jet2 is the big gap for Bournemouth).
+- Prices are Ryanair only. Jet2, TUI and easyJet sit behind bot protection and don't allow cross-site requests, so their Bournemouth routes are listed from `src/carriers.js` (a hand-maintained list — re-check each late March and late October) and link out to the airline's site. Jet2 links carry dates only for destinations whose Jet2 page name is confirmed.
 - `cheapestPerDay` gives the cheapest flight per day, so on routes with several daily flights a later, pricier flight that fits your times can be missed.
 - Prices are base fares per person, no bags or seats.
 - The endpoints are unofficial and could change or start rate-limiting.
