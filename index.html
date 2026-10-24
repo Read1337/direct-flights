@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Direct Flights</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>Direct flights from</h1>
+      <input id="origin" list="airports" placeholder="Type an airport…" autocomplete="off" spellcheck="false" aria-label="Origin airport">
+      <datalist id="airports"></datalist>
+    </div>
+
+    <form id="controls" class="controls" onsubmit="return false">
+      <fieldset class="presets" aria-label="Trip type">
+        <span class="label">Trip</span>
+        <span id="presets"></span>
+      </fieldset>
+      <fieldset>
+        <label>Leave <select id="startDay"></select></label>
+        <label>after <input id="startTime" type="time"></label>
+      </fieldset>
+      <fieldset>
+        <label>Back <select id="endDay"></select></label>
+        <label>by <input id="endTime" type="time"></label>
+      </fieldset>
+      <fieldset>
+        <label>At least <input id="minHours" type="number" min="0" max="240" step="1" inputmode="numeric"> h there</label>
+      </fieldset>
+      <fieldset>
+        <label>Next <select id="weeks">
+          <option value="4">4 weeks</option><option value="8">8 weeks</option><option value="12">12 weeks</option>
+        </select></label>
+        <label><select id="currency" aria-label="Currency"><option>GBP</option><option>EUR</option></select></label>
+      </fieldset>
+      <fieldset>
+        <label>Sort <select id="sort"><option value="price">Cheapest</option><option value="name">A–Z</option></select></label>
+        <label class="check"><input id="hideEmpty" type="checkbox"> Hide no-trip rows</label>
+      </fieldset>
+    </form>
+  </header>
+
+  <main>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <div id="legend" class="legend"></div>
+    <div class="grid-wrap"><table id="grid"></table></div>
+    <div id="tip" class="tip" role="tooltip" hidden></div>
+  </main>
+
+  <footer>
+    Return price per person, base fare (no bags or seats). Ryanair only for now · data from ryanair.com, cached for 6 hours ·
+    <button id="refresh" type="button" class="link">Refresh now</button>
+  </footer>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
