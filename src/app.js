@@ -1,5 +1,5 @@
-import { getAirports, getRoutes, getMonth, pool, bookingUrl, BlockedError } from './api.js';
-import { DAY_NAMES, PRESETS, windows, bestTrip, bestTripOnDates, operatingDays, quantileBins, isoDate } from './trips.js';
+import { getAirports, getRoutes, getMonth, pool, bookingUrl, BlockedError } from './api.js?v=__V__';
+import { DAY_NAMES, PRESETS, windows, bestTrip, bestTripOnDates, operatingDays, quantileBins, isoDate } from './trips.js?v=__V__';
 
 const $ = (id) => document.getElementById(id);
 const SYMBOL = { GBP: '£', EUR: '€' };

@@ -12,6 +12,10 @@ npm run serve   # http://localhost:8642/?from=BOH
 npm test        # trip-pairing logic
 ```
 
+## Deploying
+
+Push to `main`. The GitHub Actions workflow runs the tests, replaces `__V__` in asset URLs with the commit hash (so browsers never mix cached old files with new ones), and publishes `index.html`, `style.css` and `src/` to GitHub Pages.
+
 ## How it works
 
 - `src/api.js` — Ryanair airports, routes, and `cheapestPerDay` fares (one route, one direction, one month per request), 4 requests at a time.
