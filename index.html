@@ -20,24 +20,41 @@
         <span class="label">Trip</span>
         <span id="presets"></span>
       </fieldset>
+
+      <div id="weeklyControls" class="group">
+        <fieldset>
+          <label>Leave <select id="startDay"></select></label>
+          <label>after <input id="startTime" type="time"></label>
+        </fieldset>
+        <fieldset>
+          <label>Back <select id="endDay"></select></label>
+          <label>by <input id="endTime" type="time"></label>
+        </fieldset>
+        <fieldset>
+          <label>At least <input id="minHours" type="number" min="0" max="240" step="1" inputmode="numeric"> h there</label>
+        </fieldset>
+        <fieldset>
+          <label>From <input id="start" type="date"></label>
+          <label>for <select id="weeks">
+            <option value="4">4 weeks</option><option value="8">8 weeks</option><option value="12">12 weeks</option>
+          </select></label>
+        </fieldset>
+      </div>
+
+      <div id="datesControls" class="group" hidden>
+        <fieldset>
+          <label>Out <input id="outDate" type="date"></label>
+          <label>Back <input id="backDate" type="date"></label>
+        </fieldset>
+        <fieldset>
+          <label><select id="flex" aria-label="Date flexibility">
+            <option value="0">Exact dates</option><option value="1">± 1 day</option><option value="2">± 2 days</option><option value="3">± 3 days</option>
+          </select></label>
+        </fieldset>
+      </div>
+
       <fieldset>
-        <label>Leave <select id="startDay"></select></label>
-        <label>after <input id="startTime" type="time"></label>
-      </fieldset>
-      <fieldset>
-        <label>Back <select id="endDay"></select></label>
-        <label>by <input id="endTime" type="time"></label>
-      </fieldset>
-      <fieldset>
-        <label>At least <input id="minHours" type="number" min="0" max="240" step="1" inputmode="numeric"> h there</label>
-      </fieldset>
-      <fieldset>
-        <label>Next <select id="weeks">
-          <option value="4">4 weeks</option><option value="8">8 weeks</option><option value="12">12 weeks</option>
-        </select></label>
         <label><select id="currency" aria-label="Currency"><option>GBP</option><option>EUR</option></select></label>
-      </fieldset>
-      <fieldset>
         <label>Sort <select id="sort"><option value="price">Cheapest</option><option value="name">A–Z</option></select></label>
         <label class="check"><input id="hideEmpty" type="checkbox"> Hide no-trip rows</label>
       </fieldset>

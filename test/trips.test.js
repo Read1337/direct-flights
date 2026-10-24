@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { windows, bestTrip, windowLengthDays, nightsBetween, operatingDays, quantileBins, PRESETS } from '../src/trips.js';
+import { windows, bestTrip, bestTripOnDates, windowLengthDays, nightsBetween, operatingDays, quantileBins, PRESETS } from '../src/trips.js';
 
 const f = (dep, arr, price) => ({ dep, arr, price });
 
@@ -93,4 +93,43 @@ test('quantile bins put cheapest in 0 and priciest in the top bin', () => {
   assert.equal(binOf(10), 0);
   assert.equal(binOf(100), 4);
   assert.equal(quantileBins([]).binOf(5), 0);
+  const few = quantileBins([98, 384, 507]);
+  assert.deepEqual([98, 384, 507].map(few.binOf), [0, 1, 2]);
+});
+
+const dates = { outFrom: '2026-12-04', outTo: '2026-12-04', backFrom: '2026-12-06', backTo: '2026-12-06' };
+
+test('exact dates: only flights on those days, any time', () => {
+  const out = [f('2026-12-04T06:20:00', '2026-12-04T09:40:00', 20), f('2026-12-05T06:20:00', '2026-12-05T09:40:00', 5)];
+  const back = [f('2026-12-06T10:00:00', '2026-12-06T12:00:00', 15), f('2026-12-07T10:00:00', '2026-12-07T12:00:00', 1)];
+  const t = bestTripOnDates(out, back, dates);
+  assert.equal(t.total, 35);
+  assert.equal(t.shift, 0);
+  assert.equal(bestTripOnDates(out.slice(1), back, dates), null);
+});
+
+test('flexible dates find a cheaper shifted pair, and prefer requested dates on a tie', () => {
+  const out = [f('2026-12-04T18:00:00', '2026-12-04T21:00:00', 30), f('2026-12-05T18:00:00', '2026-12-05T21:00:00', 10)];
+  const back = [f('2026-12-06T18:00:00', '2026-12-06T20:00:00', 10)];
+  const flex = { outFrom: '2026-12-03', outTo: '2026-12-05', backFrom: '2026-12-05', backTo: '2026-12-07', outWant: '2026-12-04', backWant: '2026-12-06' };
+  assert.equal(bestTripOnDates(out, back, flex).out.dep, '2026-12-05T18:00:00');
+  const tied = [f('2026-12-03T18:00:00', '2026-12-03T21:00:00', 10), f('2026-12-04T18:00:00', '2026-12-04T21:00:00', 10)];
+  assert.equal(bestTripOnDates(tied, back, flex).out.dep, '2026-12-04T18:00:00');
+});
+
+test('return must leave after the outbound lands', () => {
+  const same = { outFrom: '2026-12-04', outTo: '2026-12-04', backFrom: '2026-12-04', backTo: '2026-12-04' };
+  const out = [f('2026-12-04T09:00:00', '2026-12-04T12:00:00', 10)];
+  assert.equal(bestTripOnDates(out, [f('2026-12-04T11:00:00', '2026-12-04T13:00:00', 10)], same), null);
+  assert.equal(bestTripOnDates(out, [f('2026-12-04T19:00:00', '2026-12-04T21:00:00', 10)], same).hours, 7);
+});
+
+test('minNights rules out same-day turnarounds from overlapping flexible ranges', () => {
+  const span = { outFrom: '2026-12-02', outTo: '2026-12-06', backFrom: '2026-12-04', backTo: '2026-12-08' };
+  const out = [f('2026-12-04T06:20:00', '2026-12-04T10:25:00', 10), f('2026-12-05T13:00:00', '2026-12-05T16:00:00', 20)];
+  const back = [f('2026-12-04T11:00:00', '2026-12-04T15:00:00', 10), f('2026-12-07T11:00:00', '2026-12-07T15:00:00', 30)];
+  assert.equal(bestTripOnDates(out, back, span).nights, 0);
+  const t = bestTripOnDates(out, back, { ...span, minNights: 1 });
+  assert.equal(t.nights >= 1, true);
+  assert.equal(t.total, 40);
 });

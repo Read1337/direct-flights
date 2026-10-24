@@ -36,6 +36,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   margin: 0;
   background: var(--bg);
@@ -58,6 +59,8 @@ h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
 .controls { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; align-items: center; }
 fieldset { border: 0; margin: 0; padding: 0; display: flex; gap: 6px; align-items: center; color: var(--ink-2); }
 .label { color: var(--ink-2); margin-right: 2px; }
+.group { display: contents; }
+input[type=date] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
 select, input[type=time], input[type=number] {
   font: inherit; color: var(--ink); background: var(--surface);
   border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px;
@@ -114,6 +117,12 @@ td span.wait { background: var(--empty); color: var(--ink-3); opacity: .5; }
 .b3 { background: var(--b3); color: var(--t3); }
 .b4 { background: var(--b4); color: var(--t4); }
 
+.list td { padding: 0 4px; }
+.list td.when { padding: 4px 12px; white-space: nowrap; color: var(--ink-2); font-size: 12px; }
+.list td.when b { display: block; color: var(--ink); font-size: 13px; font-weight: 600; }
+.list td.when .shift { color: var(--accent); font-weight: 600; }
+.list td.nope { color: var(--ink-3); font-size: 12px; padding: 4px 12px; }
+.list thead th { text-align: left; padding-left: 12px; }
 .empty-state { padding: 40px; color: var(--ink-2); text-align: center; }
 
 .tip {
@@ -138,4 +147,6 @@ td span.wait { background: var(--empty); color: var(--ink-3); opacity: .5; }
   td a b { font-size: 13px; }
   .legend .sw { padding: 2px 5px; white-space: nowrap; }
   .controls { gap: 6px 12px; }
+  .list td.when { padding: 4px 6px; }
+  .list .code { display: none; }
 }

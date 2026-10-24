@@ -66,6 +66,31 @@ export function bestTrip(outbound, inbound, win, minHours) {
   return best;
 }
 
+// Cheapest out+back with the outbound departing on a date in [outFrom, outTo] and the
+// return departing on a date in [backFrom, backTo] (YYYY-MM-DD, inclusive). Ties go to
+// the pair closest to the requested dates, then the one with more time there.
+// minNights stops overlapping flexible ranges from producing "fly out and straight back".
+export function bestTripOnDates(outbound, inbound, { outFrom, outTo, backFrom, backTo, outWant = outFrom, backWant = backTo, minNights = 0 }) {
+  const off = (t, want) => Math.abs(ms(`${t.slice(0, 10)}T00:00`) - ms(`${want}T00:00`)) / 86400000;
+  let best = null;
+  for (const o of outbound) {
+    const od = o.dep.slice(0, 10);
+    if (od < outFrom || od > outTo) continue;
+    const landed = ms(o.arr);
+    for (const b of inbound) {
+      const bd = b.dep.slice(0, 10);
+      if (bd < backFrom || bd > backTo || ms(b.dep) <= landed || nightsBetween(o.arr, b.dep) < minNights) continue;
+      const total = Math.round((o.price + b.price) * 100) / 100;
+      const shift = off(o.dep, outWant) + off(b.dep, backWant);
+      const hours = (ms(b.dep) - landed) / 3600000;
+      if (!best || total < best.total || (total === best.total && (shift < best.shift || (shift === best.shift && hours > best.hours)))) {
+        best = { out: o, back: b, total, hours, shift, nights: nightsBetween(o.arr, b.dep) };
+      }
+    }
+  }
+  return best;
+}
+
 export function nightsBetween(arr, dep) {
   return Math.round((utcDate(dep) - utcDate(arr)) / 86400000);
 }
@@ -89,6 +114,7 @@ export function operatingDays(flights) {
 export function quantileBins(values, n = 5) {
   const sorted = [...values].sort((a, b) => a - b);
   if (!sorted.length) return { binOf: () => 0, edges: [] };
+  n = Math.min(n, new Set(sorted).size); // never more bins than distinct prices
   const edges = [];
   for (let i = 1; i < n; i++) edges.push(sorted[Math.min(sorted.length - 1, Math.floor((i * sorted.length) / n))]);
   const binOf = (v) => {

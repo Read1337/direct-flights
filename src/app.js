@@ -1,5 +1,5 @@
 import { getAirports, getRoutes, getMonth, pool, bookingUrl, BlockedError } from './api.js';
-import { DAY_NAMES, PRESETS, windows, bestTrip, operatingDays, quantileBins, isoDate } from './trips.js';
+import { DAY_NAMES, PRESETS, windows, bestTrip, bestTripOnDates, operatingDays, quantileBins, isoDate } from './trips.js';
 
 const $ = (id) => document.getElementById(id);
 const SYMBOL = { GBP: '£', EUR: '€' };
@@ -7,19 +7,37 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 // ---- settings (URL ?from= wins, then saved, then defaults) ----
 
-const DEFAULTS = { origin: 'BOH', currency: 'GBP', weeks: 8, sort: 'price', hideEmpty: false, preset: 'weekend', spec: { ...PRESETS.weekend } };
+// mode 'weekly' = every matching weekend in a range; 'dates' = one specific out/back pair.
+const DEFAULTS = {
+  origin: 'BOH', currency: 'GBP', weeks: 8, start: '', sort: 'price', hideEmpty: false,
+  mode: 'weekly', preset: 'weekend', spec: { ...PRESETS.weekend }, dates: { out: '', back: '', flex: 0 },
+};
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const settings = (() => {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem('df:settings')) || {}; } catch {}
-  const s = { ...DEFAULTS, ...saved, spec: { ...DEFAULTS.spec, ...saved.spec } };
-  const from = new URLSearchParams(location.search).get('from');
+  const s = { ...DEFAULTS, ...saved, spec: { ...DEFAULTS.spec, ...saved.spec }, dates: { ...DEFAULTS.dates, ...saved.dates } };
+  const q = new URLSearchParams(location.search);
+  const from = q.get('from');
   if (from && /^[A-Za-z]{3}$/.test(from)) s.origin = from.toUpperCase();
+  // ?out=2026-12-04&back=2026-12-06[&flex=1] opens straight into specific dates (shareable).
+  if (ISO.test(q.get('out') || '') && ISO.test(q.get('back') || '')) {
+    s.mode = 'dates';
+    s.preset = 'dates';
+    s.dates = { out: q.get('out'), back: q.get('back'), flex: Math.min(3, Math.max(0, Number(q.get('flex')) || 0)) };
+  }
   return s;
 })();
 const save = () => {
   try { localStorage.setItem('df:settings', JSON.stringify(settings)); } catch {}
   const url = new URL(location);
   url.searchParams.set('from', settings.origin);
+  for (const k of ['out', 'back', 'flex']) url.searchParams.delete(k);
+  if (settings.mode === 'dates') {
+    url.searchParams.set('out', settings.dates.out);
+    url.searchParams.set('back', settings.dates.back);
+    if (settings.dates.flex) url.searchParams.set('flex', settings.dates.flex);
+  }
   history.replaceState(null, '', url);
 };
 
@@ -53,7 +71,40 @@ function monthsCovering(from, to) {
   return out;
 }
 
+// Next Friday → Sunday, as a starting point for "Pick dates".
+function defaultDates() {
+  const t = today();
+  const dow = new Date(`${t}T00:00:00Z`).getUTCDay();
+  const out = plusDays(t, ((5 - dow + 7) % 7) || 7);
+  return { out, back: plusDays(out, 2) };
+}
+
+// Keep dates sane: nothing in the past, back never before out.
+function fixDates() {
+  const t = today();
+  const d = settings.dates;
+  if (!ISO.test(d.out) || d.out < t) Object.assign(d, defaultDates());
+  if (!ISO.test(d.back) || d.back < d.out) d.back = plusDays(d.out, 2);
+}
+
+const weeklyStart = () => (settings.start && settings.start > today() ? settings.start : today());
+
+// The date span we need fares for, as [from, to].
+function range() {
+  if (settings.mode === 'dates') {
+    const { out, back, flex } = settings.dates;
+    const from = plusDays(out, -flex);
+    return [from < today() ? today() : from, plusDays(back, flex)];
+  }
+  const from = weeklyStart();
+  return [from, plusDays(from, settings.weeks * 7 + 8)]; // +8: a window starting on the last day still needs its return
+}
+
+let loadedKey = null;
+const fetchKey = () => `${settings.origin}|${settings.currency}|${monthsCovering(...range()).join(',')}`;
+
 async function load() {
+  loadedKey = fetchKey();
   controller?.abort();
   controller = new AbortController();
   const { signal } = controller;
@@ -79,8 +130,7 @@ async function load() {
   routes = list;
 
   // Month-major order so the nearest weekends fill in across every row first.
-  const from = today();
-  const months = monthsCovering(from, plusDays(from, settings.weeks * 7 + 8));
+  const months = monthsCovering(...range());
   const jobs = [];
   for (const month of months) {
     for (const r of list) {
@@ -150,7 +200,9 @@ function render() {
     return;
   }
 
-  const from = today();
+  if (settings.mode === 'dates') return renderDates(grid);
+
+  const from = weeklyStart();
   const wins = windows(settings.spec, from, plusDays(from, settings.weeks * 7), nowLocal());
   const origin = settings.origin;
 
@@ -163,7 +215,7 @@ function render() {
   });
 
   if (settings.hideEmpty) rows = rows.filter((x) => x.loading || x.best < Infinity);
-  rows.sort(settings.sort === 'name' ? (a, b) => a.r.city.localeCompare(b.r.city) : (a, b) => a.best - b.best || a.r.city.localeCompare(b.r.city));
+  sortRows(rows);
 
   const { binOf, edges, min, max } = quantileBins(rows.flatMap((x) => x.cells.filter(Boolean).map((t) => t.total)));
   renderLegend(edges, min, max);
@@ -176,7 +228,7 @@ function render() {
   const body = rows
     .map(({ r, cells, loading, days }) => {
       const meta = [r.country, days || (loading ? '' : 'no flights in range')].filter(Boolean).join(' · ');
-      const th = `<th scope="row" class="dest"><div class="dw"><span class="city">${flag(r.countryCode)} ${esc(r.city)}</span>${r.recent ? '<span class="badge">NEW</span>' : ''}<span class="meta" title="${esc(meta)}">${esc(meta)}</span></div></th>`;
+      const th = destHeader(r, meta);
       const tds = cells
         .map((t, i) => {
           if (!t) return `<td>${loading ? '<span class="wait">…</span>' : '<span class="none" aria-label="No trip">–</span>'}</td>`;
@@ -189,6 +241,60 @@ function render() {
     })
     .join('');
 
+  grid.className = '';
+  grid.innerHTML = head + `<tbody>${body}</tbody>`;
+}
+
+const sortRows = (rows) =>
+  rows.sort(settings.sort === 'name' ? (a, b) => a.r.city.localeCompare(b.r.city) : (a, b) => a.best - b.best || a.r.city.localeCompare(b.r.city));
+
+const destHeader = (r, meta) =>
+  `<th scope="row" class="dest"><div class="dw"><span class="city">${flag(r.countryCode)} ${esc(r.city)}</span>${r.recent ? '<span class="badge">NEW</span>' : ''}<span class="meta" title="${esc(meta)}">${esc(meta)}</span></div></th>`;
+
+// Specific dates: one row per destination with the actual flights, cheapest first.
+function renderDates(grid) {
+  const origin = settings.origin;
+  const { out, back, flex } = settings.dates;
+  const wantNights = Math.round((Date.parse(back) - Date.parse(out)) / 86400000);
+  const span = {
+    outFrom: plusDays(out, -flex), outTo: plusDays(out, flex), backFrom: plusDays(back, -flex), backTo: plusDays(back, flex),
+    outWant: out, backWant: back,
+    minNights: wantNights === 0 ? 0 : Math.max(1, wantNights - flex), // a day trip only if you asked for one
+  };
+
+  let rows = routes.map((r) => {
+    const o = fares.get(`${origin}-${r.code}`) || [];
+    const b = fares.get(`${r.code}-${origin}`) || [];
+    const t = bestTripOnDates(o, b, span);
+    return { r, t, best: t ? t.total : Infinity, loading: pending.get(r.code) > 0, days: daysLabel(o, b) };
+  });
+  if (settings.hideEmpty) rows = rows.filter((x) => x.loading || x.t);
+  sortRows(rows);
+
+  const { binOf, edges, min, max } = quantileBins(rows.filter((x) => x.t).map((x) => x.t.total));
+  renderLegend(edges, min, max, flex ? `Cheapest return within ±${flex} day${flex > 1 ? 's' : ''} of your dates, per person` : 'Cheapest return on your dates, per person');
+
+  const when = (f, want, from, to) => {
+    const d = f.dep.slice(0, 10);
+    const diff = Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${want}T00:00:00Z`)) / 86400000);
+    const tag = diff ? ` <span class="shift">${diff > 0 ? '+' : '−'}${Math.abs(diff)}d</span>` : '';
+    return `<td class="when"><b>${dayOf(f.dep)} ${dateLabel(d)}${tag}</b>${hhmm(f.dep)}<span class="code"> ${from}</span> → ${hhmm(f.arr)}<span class="code"> ${to}</span></td>`;
+  };
+
+  trips = [];
+  const head = `<thead><tr><th scope="col">${rows.length} destination${rows.length === 1 ? '' : 's'}</th><th scope="col">Return</th><th scope="col">Out</th><th scope="col">Back</th></tr></thead>`;
+  const body = rows
+    .map(({ r, t, loading, days }) => {
+      const th = destHeader(r, [r.country, days || (loading ? '' : 'no flights in range')].filter(Boolean).join(' · '));
+      if (!t) return `<tr>${th}<td colspan="3" class="nope">${loading ? '…' : 'No flights that fit these dates'}</td></tr>`;
+      const id = trips.push({ t, r }) - 1;
+      const href = bookingUrl(origin, r.code, t.out.dep.slice(0, 10), t.back.dep.slice(0, 10));
+      const price = `<td><a class="b${binOf(t.total)}" href="${esc(href)}" target="_blank" rel="noopener" data-i="${id}" aria-label="${esc(`${r.city}, ${money(t.total, 2)}`)}"><b>${money(t.total)}</b><small>${t.nights} night${t.nights === 1 ? '' : 's'}</small></a></td>`;
+      return `<tr>${th}${price}${when(t.out, out, origin, r.code)}${when(t.back, back, r.code, origin)}</tr>`;
+    })
+    .join('');
+
+  grid.className = 'list';
   grid.innerHTML = head + `<tbody>${body}</tbody>`;
 }
 
@@ -208,14 +314,15 @@ function renderStatus() {
   }
 }
 
-function renderLegend(edges, min, max) {
+function renderLegend(edges, min, max, title = 'Cheapest return in each window, per person') {
   if (min === undefined) return ($('legend').innerHTML = '');
   const bounds = [min, ...edges, max];
   const sw = bounds.slice(0, -1).map((lo, i) => {
     const hi = bounds[i + 1];
-    return `<span class="sw b${i}">${i === bounds.length - 2 ? `${money(lo)}+` : `${money(lo)}–${money(hi)}`}</span>`;
+    const label = i === bounds.length - 2 ? (lo === hi ? money(lo) : `${money(lo)}+`) : `${money(lo)}–${money(hi)}`;
+    return `<span class="sw b${i}">${label}</span>`;
   });
-  $('legend').innerHTML = `<span>Cheapest return in each window, per person</span><span class="swatches">${sw.join('')}</span>`;
+  $('legend').innerHTML = `<span>${title}</span><span class="swatches">${sw.join('')}</span>`;
 }
 
 // ---- tooltip ----
@@ -254,6 +361,15 @@ function syncControls() {
   for (const k of ['startDay', 'endDay']) $(k).value = settings.spec[k];
   for (const k of ['startTime', 'endTime', 'minHours']) $(k).value = settings.spec[k];
   $('weeks').value = settings.weeks;
+  $('start').value = weeklyStart();
+  $('start').min = today();
+  $('outDate').value = settings.dates.out;
+  $('backDate').value = settings.dates.back;
+  $('outDate').min = today();
+  $('backDate').min = settings.dates.out;
+  $('flex').value = settings.dates.flex;
+  $('weeklyControls').hidden = settings.mode === 'dates';
+  $('datesControls').hidden = settings.mode !== 'dates';
   $('currency').value = settings.currency;
   $('sort').value = settings.sort;
   $('hideEmpty').checked = settings.hideEmpty;
@@ -269,15 +385,21 @@ function setupControls() {
   const dayOpts = [5, 6, 0, 1, 2, 3, 4].map((d) => `<option value="${d}">${DAY_NAMES[d]}</option>`).join('');
   $('startDay').innerHTML = dayOpts;
   $('endDay').innerHTML = dayOpts;
-  $('presets').innerHTML = Object.entries(PRESETS).map(([k, p]) => `<button type="button" data-p="${k}">${p.label}</button>`).join(' ');
+  $('presets').innerHTML = [...Object.entries(PRESETS), ['dates', { label: 'Pick dates' }]].map(([k, p]) => `<button type="button" data-p="${k}">${p.label}</button>`).join(' ');
 
   $('presets').addEventListener('click', (e) => {
     const p = e.target.closest('button')?.dataset.p;
     if (!p) return;
-    const { label, ...spec } = PRESETS[p];
     settings.preset = p;
-    settings.spec = spec;
-    changed();
+    if (p === 'dates') {
+      settings.mode = 'dates';
+      fixDates();
+    } else {
+      const { label, ...spec } = PRESETS[p];
+      settings.mode = 'weekly';
+      settings.spec = spec;
+    }
+    changed(true);
   });
 
   // Trip rule edits only re-pair existing data — no refetch.
@@ -298,6 +420,23 @@ function setupControls() {
   $('hideEmpty').addEventListener('change', (e) => { settings.hideEmpty = e.target.checked; changed(); });
   // These change what we fetch.
   $('weeks').addEventListener('change', (e) => { settings.weeks = Number(e.target.value); changed(true); });
+  $('start').addEventListener('change', (e) => { settings.start = ISO.test(e.target.value) ? e.target.value : ''; changed(true); });
+  $('outDate').addEventListener('change', (e) => {
+    if (!ISO.test(e.target.value)) return;
+    const len = Math.round((Date.parse(settings.dates.back) - Date.parse(settings.dates.out)) / 86400000);
+    settings.dates.out = e.target.value;
+    // Moving the out date keeps the trip length, like most flight searches.
+    settings.dates.back = plusDays(e.target.value, Math.max(0, len));
+    fixDates();
+    changed(true);
+  });
+  $('backDate').addEventListener('change', (e) => {
+    if (!ISO.test(e.target.value)) return;
+    settings.dates.back = e.target.value;
+    fixDates();
+    changed(true);
+  });
+  $('flex').addEventListener('change', (e) => { settings.dates.flex = Number(e.target.value); changed(true); });
   $('currency').addEventListener('change', (e) => { settings.currency = e.target.value; changed(true); });
 
   const pickOrigin = () => {
@@ -328,13 +467,14 @@ function changed(refetch = false) {
   save();
   syncControls();
   hideTip();
-  refetch ? load() : render();
+  refetch && fetchKey() !== loadedKey ? load() : render();
 }
 
 // ---- boot ----
 
 try { Object.keys(localStorage).filter((k) => k.startsWith('df:v1:')).forEach((k) => localStorage.removeItem(k)); } catch {}
 
+if (settings.mode === 'dates') fixDates();
 setupControls();
 syncControls();
 save();
